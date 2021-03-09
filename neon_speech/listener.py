@@ -205,16 +205,22 @@ class AudioConsumer(MycroftAudioConsumer):
             return
         context = context or {}
         lang = context.get("lang") or self.loop.stt.lang
+        heard_time = time.time()
         if self._audio_length(audio) < self.MIN_AUDIO_SIZE:
             LOG.warning("Audio too short to be processed")
         else:
             transcription = self.transcribe(audio, lang)
+            transcribed_time = time.time()
             if transcription:
+                ident = str(time.time()) + hash_sentence(transcription)
                 # STT succeeded, send the transcribed stt on for processing
                 payload = {
                     'utterances': [transcription],
                     'lang': lang,
-                    "data": context
+                    'ident': ident,
+                    "data": context,
+                    "timing": {"start": heard_time,
+                               "transcribed": transcribed_time}
                 }
                 self.loop.emit("recognizer_loop:utterance", payload)
 
