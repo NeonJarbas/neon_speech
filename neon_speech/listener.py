@@ -106,6 +106,13 @@ class AudioConsumer(MycroftAudioConsumer):
         Thread.__init__(self)
         self.daemon = True
         self.loop = loop
+        # TODO: Revisit after user database #24 DM
+        # probably should be moved into self.loop
+        try:
+            from NGI.server.chat_user_database import KlatUserDatabase
+            self.chat_user_database = KlatUserDatabase()
+        except Exception as e:
+            self.chat_user_database = None
 
     @property
     def wakeup_engines(self):
@@ -151,6 +158,25 @@ class AudioConsumer(MycroftAudioConsumer):
                 self.loop.emit('recognizer_loop:awoken')
                 break
 
+    def _get_lang(self, context):
+        user = context.get("user")
+        if self.chat_user_database:
+            # TODO this needs to be revisited once a unified user db is
+            #  introduced, right now this only comes from Klat, in the
+            #  future mycroft will be locally aware of users and the same
+            #  code should work for both cases
+            # self.server_listener.get_nick_profiles(flac_filename)
+            self.chat_user_database.update_profile_for_nick(user)
+            chat_user = self.chat_user_database.get_profile(user)
+            stt_language = chat_user["speech"].get('stt_language', 'en')
+            alt_langs = chat_user["speech"].get("alt_languages", ['en', 'es'])
+        else:
+            # context might contain language from wake-word or from some
+            # audio module (eg, speaker identification)
+            stt_language = context.get("lang")
+            alt_langs = None
+        return stt_language or self.loop.stt.lang
+
     def process(self, audio, context=None):
         if audio is None:
             return
@@ -177,10 +203,10 @@ class AudioConsumer(MycroftAudioConsumer):
 
         try:
             # Invoke the STT engine on the audio clip
-            text = self.loop.stt.execute(audio, language=lang)
+            text = self.loop.stt.execute(audio, language=lang) or ""
             if text:
                 LOG.debug("STT: " + text)
-            if not text:
+            else:
                 LOG.info('no words were transcribed')
                 send_stt_failure_event()
             return text.strip()
