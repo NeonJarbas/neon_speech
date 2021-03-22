@@ -13,6 +13,11 @@
 # limitations under the License.
 #
 import neon_speech
+from mycroft_bus_client import MessageBusClient
+from typing import Optional
+
+import time
+
 from threading import Lock
 
 from ovos_utils.messagebus import Message, get_mycroft_bus
@@ -26,10 +31,10 @@ from mycroft.util import reset_sigint_handler, create_daemon, wait_for_exit_sign
 from mycroft.configuration import Configuration
 from mycroft.util.log import LOG
 
-bus = None  # Mycroft messagebus connection
+bus: Optional[MessageBusClient] = None  # Mycroft messagebus connection
 lock = Lock()
-loop = None
-config = None
+loop: Optional[RecognizerLoop] = None
+config: Optional[dict] = None
 service = None
 
 
@@ -80,6 +85,11 @@ def handle_utterance(event):
         ident = event.pop('ident')
         context['ident'] = ident
     bus.emit(Message('recognizer_loop:utterance', event, context))
+
+
+def handle_wake_words_state(message):
+    enabled = message.data.get("enabled", True)
+    loop.change_wake_word_state(enabled)
 
 
 def handle_hotword(event):
@@ -297,6 +307,8 @@ def main():
     bus.on('mycroft.stop', handle_stop)
 
     bus.on('recognizer_loop:klat_utterance', handle_input_from_klat)
+
+    bus.on("neon.wake_words_state", handle_wake_words_state)
 
     service = AudioParsersService(bus, config=config)
     service.start()

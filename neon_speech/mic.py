@@ -1,3 +1,26 @@
+# NEON AI (TM) SOFTWARE, Software Development Kit & Application Development System
+#
+# Copyright 2008-2021 Neongecko.com Inc. | All Rights Reserved
+#
+# Notice of License - Duplicating this Notice of License near the start of any file containing
+# a derivative of this software is a condition of license for this software.
+# Friendly Licensing:
+# No charge, open source royalty free use of the Neon AI software source and object is offered for
+# educational users, noncommercial enthusiasts, Public Benefit Corporations (and LLCs) and
+# Social Purpose Corporations (and LLCs). Developers can contact developers@neon.ai
+# For commercial licensing, distribution of derivative works or redistribution please contact licenses@neon.ai
+# Distributed on an "AS IS” basis without warranties or conditions of any kind, either express or implied.
+# Trademarks of Neongecko: Neon AI(TM), Neon Assist (TM), Neon Communicator(TM), Klat(TM)
+# Authors: Guy Daniels, Daniel McKnight, Regina Bloomstine, Elon Gasper, Richard Leeds
+#
+# Specialized conversational reconveyance options from Conversation Processing Intelligence Corp.
+# US Patents 2008-2021: US7424516, US20140161250, US20140177813, US8638908, US8068604, US8553852, US10530923, US10530924
+# China Patent: CN102017585  -  Europe Patent: EU2156652  -  Patents Pending
+#
+# This software is an enhanced derivation of the Mycroft Project which is licensed under the
+# Apache software Foundation software license 2.0 https://www.apache.org/licenses/LICENSE-2.0
+# Changes Copyright 2008-2021 Neongecko.com Inc. | All Rights Reserved
+#
 # Copyright 2017 Mycroft AI Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,32 +35,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-import audioop
-from time import sleep, time as get_time
+from os.path import join
+from time import time as get_time
 
-from collections import deque
-import datetime
-import os
-from os.path import isdir, join
-import pyaudio
-import speech_recognition
-from hashlib import md5
+from mycroft.audio import is_speaking, wait_while_speaking
+from mycroft.client.speech.hotword_factory import HotWordEngine
+from mycroft.client.speech.mic import get_silence, \
+    ResponsiveRecognizer as MycroftResponsiveRecognizer
+from mycroft.util import play_ogg, play_wav, play_mp3, resolve_resource_file
+from mycroft.util.log import LOG
 from speech_recognition import (
-    Microphone,
     AudioSource,
     AudioData
 )
-from tempfile import gettempdir
-from threading import Lock
-
-from ovos_utils import resolve_resource_file
-from ovos_utils.signal import check_for_signal, get_ipc_directory
-from ovos_utils.sound import play_ogg, play_wav, play_mp3
-from ovos_utils.log import LOG
-from ovos_utils.lang.phonemes import get_phonemes
-from mycroft.client.speech.mic import MutableStream, MutableMicrophone, \
-    get_silence, ResponsiveRecognizer as MycroftResponsiveRecognizer
-from mycroft.client.speech.hotword_factory import HotWordEngine
 
 
 class ResponsiveRecognizer(MycroftResponsiveRecognizer):
@@ -111,6 +121,8 @@ class ResponsiveRecognizer(MycroftResponsiveRecognizer):
 
         For example when we are in a dialog with the user.
         """
+        if not self.loop.use_wake_words:
+            return True
         # Check if told programmatically to skip the wake word
         if self.listen_requested:
             self.listen_requested = False
@@ -308,25 +320,66 @@ class ResponsiveRecognizer(MycroftResponsiveRecognizer):
         # NOTE: adjust_for_ambient_noise() doc claims it will stop early if
         #       stt is detected, but there is no code to actually do that.
         self.adjust_for_ambient_noise(source, 1.0)
+        # If skipping wake words, just pass audio to our streaming STT
+        # TODO: Check config updates?
+        if stream and not self.loop.use_wake_words:
+            stream.stream_start()
+            frame_data = get_silence(source.SAMPLE_WIDTH)
+            LOG.debug("Stream starting!")
+            # a crude way to detect the end of an utterance is not detecting
+            # changes for N times in a row, this gives us support for all
+            # streaming engines, ideally there would be a proper event
+            # TODO add a check and support for this, standardize api in ovos
+            prev_transcript = ""
+            count = 0
+            while counter <= 5:  # TODO config for thresh ?
 
-        LOG.debug("Waiting for wake word...")
-        wuw_frame_data, lang = self._wait_until_wake_word(source,
-                                                          sec_per_buffer)
-        self.audio_consumers.feed_hotword(
-            self._create_audio_data(wuw_frame_data, source))
-        if self._stop_signaled:
-            return
+                # stream audio until stable STT transcript detected
+                # (this is called again immediately)
+                chunk = self.record_sound_chunk(source)
 
-        LOG.debug("Recording...")
-        self.loop.emit("recognizer_loop:record_begin")
+                # Filter out TTS
+                if not is_speaking():
+                    stream.stream_chunk(chunk)
+                    frame_data += chunk
+                else:
+                    # if TTS started discard old audio
+                    frame_data = get_silence(source.SAMPLE_WIDTH)
+                    wait_while_speaking()
+                    break
 
-        frame_data = self._record_phrase(
-            source,
-            sec_per_buffer,
-            stream
-        )
-        if self.include_wuw_in_utterance and wuw_frame_data is not None:
-            frame_data = wuw_frame_data + frame_data
+                if prev_transcript and not stream.text:
+                    break # stt reset transcription internally
+                elif stream.text and stream.text != prev_transcript:
+                    prev_transcript = stream.text # transcript updated
+                else:
+                    counter += 1  # transcript stabilizing
+
+            LOG.debug("stream ended!")
+        # If using wake words, wait until the wake_word is detected and then record the following phrase
+        else:
+            if self.loop.use_wake_words:
+                LOG.debug("Waiting for wake word...")
+                wuw_frame_data, lang = self._wait_until_wake_word(source,
+                                                                  sec_per_buffer)
+                self.audio_consumers.feed_hotword(
+                    self._create_audio_data(wuw_frame_data, source))
+
+            # abort recording, eg, button press
+            if self._stop_signaled:
+                return
+
+            LOG.debug("Recording...")
+            self.loop.emit("recognizer_loop:record_begin")
+
+            frame_data = self._record_phrase(
+                source,
+                sec_per_buffer,
+                stream
+            )
+            if self.include_wuw_in_utterance and wuw_frame_data is not None:
+                frame_data = wuw_frame_data + frame_data
+
         audio_data = self._create_audio_data(frame_data, source)
         self.loop.emit("recognizer_loop:record_end")
 

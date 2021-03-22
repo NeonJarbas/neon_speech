@@ -1,3 +1,26 @@
+# NEON AI (TM) SOFTWARE, Software Development Kit & Application Development System
+#
+# Copyright 2008-2021 Neongecko.com Inc. | All Rights Reserved
+#
+# Notice of License - Duplicating this Notice of License near the start of any file containing
+# a derivative of this software is a condition of license for this software.
+# Friendly Licensing:
+# No charge, open source royalty free use of the Neon AI software source and object is offered for
+# educational users, noncommercial enthusiasts, Public Benefit Corporations (and LLCs) and
+# Social Purpose Corporations (and LLCs). Developers can contact developers@neon.ai
+# For commercial licensing, distribution of derivative works or redistribution please contact licenses@neon.ai
+# Distributed on an "AS IS” basis without warranties or conditions of any kind, either express or implied.
+# Trademarks of Neongecko: Neon AI(TM), Neon Assist (TM), Neon Communicator(TM), Klat(TM)
+# Authors: Guy Daniels, Daniel McKnight, Regina Bloomstine, Elon Gasper, Richard Leeds
+#
+# Specialized conversational reconveyance options from Conversation Processing Intelligence Corp.
+# US Patents 2008-2021: US7424516, US20140161250, US20140177813, US8638908, US8068604, US8553852, US10530923, US10530924
+# China Patent: CN102017585  -  Europe Patent: EU2156652  -  Patents Pending
+#
+# This software is an enhanced derivation of the Mycroft Project which is licensed under the
+# Apache software Foundation software license 2.0 https://www.apache.org/licenses/LICENSE-2.0
+# Changes Copyright 2008-2021 Neongecko.com Inc. | All Rights Reserved
+#
 # Copyright 2017 Mycroft AI Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +37,7 @@
 #
 from time import sleep
 import time
-from threading import Thread
+from threading import Thread, Event
 import speech_recognition as sr
 import pyaudio
 from queue import Queue, Empty
@@ -195,12 +218,12 @@ class AudioConsumer(MycroftAudioConsumer):
                 }
                 self.loop.emit("recognizer_loop:utterance", payload)
 
-    def transcribe(self, audio, lang=None):
-
-        def send_stt_failure_event():
-            """ Send message that nothing was transcribed. """
+    def send_stt_failure_event(self):
+        """ Send message that nothing was transcribed. """
+        if self.loop.use_wake_words:  # Don't capture ambient noise
             self.loop.emit('recognizer_loop:stt.recognition.unknown')
 
+    def transcribe(self, audio, lang=None):
         try:
             # Invoke the STT engine on the audio clip
             text = self.loop.stt.execute(audio, language=lang) or ""
@@ -208,10 +231,10 @@ class AudioConsumer(MycroftAudioConsumer):
                 LOG.debug("STT: " + text)
             else:
                 LOG.info('no words were transcribed')
-                send_stt_failure_event()
+                self.send_stt_failure_event()
             return text.strip()
         except Exception as e:
-            send_stt_failure_event()
+            self.send_stt_failure_event()
             LOG.error(e)
             LOG.error("Speech Recognition could not understand audio")
             return None
@@ -232,6 +255,7 @@ class RecognizerLoop(MycroftRecognizerLoop):
         self.audio_consumer = None
         self.audio_producer = None
         self.responsive_recognizer = None
+        self.use_wake_words = True
         super().__init__(*args, **kwargs)
 
     def _load_config(self):
@@ -254,6 +278,7 @@ class RecognizerLoop(MycroftRecognizerLoop):
         self.create_hotword_engines()
         self.state = RecognizerLoopState()
         self.responsive_recognizer = ResponsiveRecognizer(self)
+        self.use_wake_words = self.config.get("wake_word_enabled", True)
 
     def bind(self, parsers_service):
         self.responsive_recognizer.bind(parsers_service)
@@ -345,3 +370,6 @@ class RecognizerLoop(MycroftRecognizerLoop):
         self._load_config()
         # restart
         self.start_async()
+
+    def change_wake_word_state(self, enabled: bool):
+        self.use_wake_words = enabled
