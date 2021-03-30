@@ -84,6 +84,7 @@ def handle_utterance(event):
     LOG.info("Utterance: " + str(event['utterances']))
     context = {'client_name': 'neon_speech',
                'source': 'audio',
+               'raw_audio': event.pop('raw_audio'),
                'destination': ["skills"],
                "timing": event.pop("timing", {})}
     if "data" in event:

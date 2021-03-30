@@ -19,29 +19,25 @@
 # WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 # USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from time import sleep
 import time
-from threading import Thread, Event
-import speech_recognition as sr
-import pyaudio
 from queue import Queue, Empty
-import json
-from pyee import EventEmitter
-from requests import RequestException
-from requests.exceptions import ConnectionError
+from threading import Thread
+from time import sleep
 
-from neon_speech.hotword_factory import HotWordFactory
-from neon_speech.mic import MutableMicrophone, ResponsiveRecognizer
-from neon_speech.utils import find_input_device
-from neon_speech.stt import STTFactory
-from mycroft.util.log import LOG
-from mycroft.configuration import Configuration
+import pyaudio
 from mycroft.client.speech.listener import AudioStreamHandler, \
     AudioProducer as MycroftAudioProducer, AudioConsumer as \
     MycroftAudioConsumer, RecognizerLoopState, recognizer_conf_hash, \
     RecognizerLoop as MycroftRecognizerLoop, MAX_MIC_RESTARTS, AUDIO_DATA, \
     STREAM_START, STREAM_DATA, STREAM_STOP
+from mycroft.configuration import Configuration
 from mycroft.tts.cache import hash_sentence
+from mycroft.util.log import LOG
+from neon_speech.hotword_factory import HotWordFactory
+from neon_speech.mic import MutableMicrophone, ResponsiveRecognizer
+from neon_speech.stt import STTFactory
+from neon_speech.utils import find_input_device
+from ovos_utils.json_helper import merge_dict
 
 
 class AudioProducer(MycroftAudioProducer):
@@ -67,10 +63,12 @@ class AudioProducer(MycroftAudioProducer):
             self.recognizer.adjust_for_ambient_noise(source)
             while self.loop.state.running:
                 try:
-                    audio, lang = self.recognizer.listen(source, self.stream_handler)
+                    audio, context = self.recognizer.listen(source,
+                                                            self.stream_handler)
                     if audio is not None:
-                        audio, context = self.recognizer.audio_consumers.get_context(audio)
-                        context["lang"] = lang
+                        audio, metadata = \
+                            self.recognizer.audio_consumers.get_context(audio)
+                        context = merge_dict(context, metadata)
                         self.loop.queue.put((AUDIO_DATA, audio, context))
                     else:
                         LOG.warning("Audio contains no data.")
@@ -203,6 +201,7 @@ class AudioConsumer(MycroftAudioConsumer):
                     'lang': lang,
                     'ident': ident,
                     "data": context,
+                    "raw_audio": context.get("audio_filename"),
                     "timing": {"start": heard_time,
                                "transcribed": transcribed_time}
                 }
@@ -341,7 +340,8 @@ class RecognizerLoop(MycroftRecognizerLoop):
         while self.state.running:
             try:
                 sleep(5)
-                current_hash = recognizer_conf_hash(Configuration.load_config_stack())
+                current_hash = recognizer_conf_hash(
+                    Configuration.load_config_stack())
                 if current_hash != self._config_hash:
                     self._config_hash = current_hash
                     LOG.debug('Config has changed, reloading...')

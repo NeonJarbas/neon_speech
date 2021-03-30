@@ -19,8 +19,8 @@
 # WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 # USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import audioop
-from time import sleep, time as get_time
+from os.path import join
+from time import time as get_time
 
 from mycroft.audio import is_speaking, wait_while_speaking
 from mycroft.client.speech.hotword_factory import HotWordEngine
@@ -305,7 +305,7 @@ class ResponsiveRecognizer(MycroftResponsiveRecognizer):
         #       stt is detected, but there is no code to actually do that.
         self.adjust_for_ambient_noise(source, 1.0)
         # If skipping wake words, just pass audio to our streaming STT
-        # TODO: Check config updates?
+        
         if stream and not self.loop.use_wake_words:
             stream.stream_start()
             frame_data = get_silence(source.SAMPLE_WIDTH)
@@ -366,10 +366,14 @@ class ResponsiveRecognizer(MycroftResponsiveRecognizer):
 
         audio_data = self._create_audio_data(frame_data, source)
         self.loop.emit("recognizer_loop:record_end")
-
         if self.save_utterances:
-            LOG.info("Saving Utterance Recording")
-            pass  # TODO
-
-        return audio_data, lang
+            LOG.info("Recording utterance")
+            stamp = str(datetime.datetime.now())
+            filename = join(self.saved_utterances_dir, f"utterance{stamp}.wav")
+            with open(filename, 'wb') as filea:
+                filea.write(audio_data.get_wav_data())
+            LOG.debug("Thinking...")
+        else:
+            filename = None
+        return audio_data, {"lang": lang, "filename": filename}
 
