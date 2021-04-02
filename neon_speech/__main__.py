@@ -132,10 +132,7 @@ def handle_speak(event):
 def handle_complete_intent_failure(message: Message):
     """Extreme backup for answering completely unhandled intent requests."""
     LOG.info("Failed to find intent.")
-    context = {'client_name': 'neon_speech',
-               'source': 'audio',
-               'destination': ["skills"]}
-    bus.emit(Message('complete.intent.failure', message.data, context))
+    bus.emit(message.forward("complete.intent.failure", message.data))
 
 
 def handle_sleep(message: Message):
