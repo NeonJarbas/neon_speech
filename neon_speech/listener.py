@@ -111,13 +111,6 @@ class AudioConsumer(MycroftAudioConsumer):
         Thread.__init__(self)
         self.daemon = True
         self.loop = loop
-        # TODO: Revisit after user database #24 DM
-        # probably should be moved into self.loop
-        try:
-            from NGI.server.chat_user_database import KlatUserDatabase
-            self.chat_user_database = KlatUserDatabase()
-        except Exception as e:
-            self.chat_user_database = None
 
     @property
     def wakeup_engines(self):
@@ -171,8 +164,8 @@ class AudioConsumer(MycroftAudioConsumer):
             #  future mycroft will be locally aware of users and the same
             #  code should work for both cases
             # self.server_listener.get_nick_profiles(flac_filename)
-            self.chat_user_database.update_profile_for_nick(user)
-            chat_user = self.chat_user_database.get_profile(user)
+            self.loop.chat_user_database.update_profile_for_nick(user)
+            chat_user = self.loop.chat_user_database.get_profile(user)
             stt_language = chat_user["speech"].get('stt_language', 'en')
             alt_langs = chat_user["speech"].get("alt_languages", ['en', 'es'])
         else:
@@ -245,6 +238,11 @@ class RecognizerLoop(MycroftRecognizerLoop):
         self.audio_producer = None
         self.responsive_recognizer = None
         self.use_wake_words = True
+        try:
+            from NGI.server.chat_user_database import KlatUserDatabase
+            self.chat_user_database = KlatUserDatabase()
+        except Exception as e:
+            self.chat_user_database = None
         super().__init__(*args, **kwargs)
 
     def _load_config(self):

@@ -50,7 +50,10 @@ class BackgroundNoise(AudioParser):
         # discard the last ~0.7 seconds of audio
         audio = self._audio.frame_data[:-self.seconds_to_size(0.7)]
         rms = audioop.rms(audio, 2)
-        decibel = 20 * log10(rms)
+        try:
+            decibel = 20 * log10(rms)
+        except: # mic unplugged ?
+            decibel = 0
         return decibel
 
     def on_hotword(self, audio_data):

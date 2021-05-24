@@ -25,7 +25,7 @@ from time import time as get_time
 from mycroft.audio import is_speaking, wait_while_speaking
 from mycroft.client.speech.hotword_factory import HotWordEngine
 from mycroft.client.speech.mic import get_silence, \
-    ResponsiveRecognizer as MycroftResponsiveRecognizer
+    ResponsiveRecognizer as MycroftResponsiveRecognizer, MutableMicrophone
 from mycroft.util import play_ogg, play_wav, play_mp3, resolve_resource_file
 from mycroft.util.log import LOG
 from speech_recognition import (
@@ -305,7 +305,7 @@ class ResponsiveRecognizer(MycroftResponsiveRecognizer):
         #       stt is detected, but there is no code to actually do that.
         self.adjust_for_ambient_noise(source, 1.0)
         # If skipping wake words, just pass audio to our streaming STT
-        
+
         if stream and not self.loop.use_wake_words:
             stream.stream_start()
             frame_data = get_silence(source.SAMPLE_WIDTH)
