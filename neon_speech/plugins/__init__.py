@@ -9,8 +9,8 @@ from speech_recognition import AudioData
 from threading import Thread, Event
 import pkg_resources
 from ovos_utils.json_helper import merge_dict
-from ovos_utils.log import LOG
-from neon_speech.utils import get_config
+from mycroft.util.log import LOG
+
 
 DEBUG = True
 
@@ -305,7 +305,7 @@ class AudioParser:
         self.name = name
         self.bus = None
         self.priority = priority
-        config_core = config or get_config()
+        config_core = config or Configuration.get()
         self.config = config_core.get("audio_parsers", {}).get(self.name, {})
 
     def bind(self, bus):

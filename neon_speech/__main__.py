@@ -12,17 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import neon_speech
 from threading import Lock
 
-from ovos_utils import create_daemon, wait_for_exit_signal
 from ovos_utils.messagebus import Message, get_mycroft_bus
-from ovos_utils.log import LOG
 from ovos_utils.json_helper import merge_dict
 
 from neon_speech.plugins import AudioParsersService
-from neon_speech.utils import get_config
 from neon_speech.listener import RecognizerLoop
-from neon_speech.utils import reset_sigint_handler
+from mycroft.util import reset_sigint_handler, create_daemon, wait_for_exit_signal
+from mycroft.configuration import Configuration
+from mycroft.util.log import LOG
 
 bus = None  # Mycroft messagebus connection
 lock = Lock()
@@ -34,7 +34,7 @@ service = None
 def handle_record_begin():
     """Forward internal bus message to external bus."""
     LOG.info("Begin Recording...")
-    context = {'client_name': 'mycroft_listener',
+    context = {'client_name': 'neon_speech',
                'source': 'audio',
                'destination': ["skills"]}
     bus.emit(Message('recognizer_loop:record_begin', context=context))
@@ -43,7 +43,7 @@ def handle_record_begin():
 def handle_record_end():
     """Forward internal bus message to external bus."""
     LOG.info("End Recording...")
-    context = {'client_name': 'mycroft_listener',
+    context = {'client_name': 'neon_speech',
                'source': 'audio',
                'destination': ["skills"]}
     bus.emit(Message('recognizer_loop:record_end', context=context))
@@ -51,7 +51,7 @@ def handle_record_end():
 
 def handle_no_internet():
     LOG.debug("Notifying enclosure of no internet connection")
-    context = {'client_name': 'mycroft_listener',
+    context = {'client_name': 'neon_speech',
                'source': 'audio',
                'destination': ["skills"]}
     bus.emit(Message('enclosure.notify.no_internet', context=context))
@@ -60,7 +60,7 @@ def handle_no_internet():
 def handle_awoken():
     """Forward mycroft.awoken to the messagebus."""
     LOG.info("Listener is now Awake: ")
-    context = {'client_name': 'mycroft_listener',
+    context = {'client_name': 'neon_speech',
                'source': 'audio',
                'destination': ["skills"]}
     bus.emit(Message('mycroft.awoken', context=context))
@@ -68,7 +68,7 @@ def handle_awoken():
 
 def handle_utterance(event):
     LOG.info("Utterance: " + str(event['utterances']))
-    context = {'client_name': 'mycroft_listener',
+    context = {'client_name': 'neon_speech',
                'source': 'audio',
                'destination': ["skills"]}
     if "data" in event:
@@ -81,7 +81,7 @@ def handle_utterance(event):
 
 
 def handle_hotword(event):
-    context = {'client_name': 'mycroft_listener',
+    context = {'client_name': 'neon_speech',
                'source': 'audio',
                'destination': ["skills"]}
     if not event.get("listen", False):
@@ -93,7 +93,7 @@ def handle_hotword(event):
 
 
 def handle_unknown():
-    context = {'client_name': 'mycroft_listener',
+    context = {'client_name': 'neon_speech',
                'source': 'audio',
                'destination': ["skills"]}
     bus.emit(Message('mycroft.speech.recognition.unknown', context=context))
@@ -103,42 +103,42 @@ def handle_speak(event):
     """
         Forward speak message to message bus.
     """
-    context = {'client_name': 'mycroft_listener',
+    context = {'client_name': 'neon_speech',
                'source': 'audio',
                'destination': ["skills"]}
     bus.emit(Message('speak', event, context))
 
 
-def handle_complete_intent_failure(event):
+def handle_complete_intent_failure(message: Message):
     """Extreme backup for answering completely unhandled intent requests."""
     LOG.info("Failed to find intent.")
-    context = {'client_name': 'mycroft_listener',
+    context = {'client_name': 'neon_speech',
                'source': 'audio',
                'destination': ["skills"]}
-    bus.emit(Message('complete.intent.failure', event, context))
+    bus.emit(Message('complete.intent.failure', message.data, context))
 
 
-def handle_sleep(event):
+def handle_sleep(message: Message):
     """Put the recognizer loop to sleep."""
     loop.sleep()
 
 
-def handle_wake_up(event):
+def handle_wake_up(message: Message):
     """Wake up the the recognize loop."""
     loop.awaken()
 
 
-def handle_mic_mute(event):
+def handle_mic_mute(message: Message):
     """Mute the listener system."""
     loop.mute()
 
 
-def handle_mic_unmute(event):
+def handle_mic_unmute(message: Message):
     """Unmute the listener system."""
     loop.unmute()
 
 
-def handle_mic_listen(_):
+def handle_mic_listen(message: Message):
     """Handler for mycroft.mic.listen.
 
     Starts listening as if wakeword was spoken.
@@ -146,23 +146,23 @@ def handle_mic_listen(_):
     loop.responsive_recognizer.trigger_listen()
 
 
-def handle_mic_get_status(event):
+def handle_mic_get_status(message: Message):
     """Query microphone mute status."""
     data = {'muted': loop.is_muted()}
     message = event.response(data)
-    message.context = {'client_name': 'mycroft_listener',
+    message.context = {'client_name': 'neon_speech',
                        'source': 'audio',
                        'destination': ["skills"]}
     bus.emit(message)
 
 
-def handle_audio_start(event):
+def handle_audio_start(message: Message):
     """Mute recognizer loop."""
     if config.get("listener").get("mute_during_output"):
         loop.mute()
 
 
-def handle_audio_end(event):
+def handle_audio_end(message: Message):
     """Request unmute, if more sources have requested the mic to be muted
     it will remain muted.
     """
@@ -170,7 +170,7 @@ def handle_audio_end(event):
         loop.unmute()  # restore
 
 
-def handle_stop(event):
+def handle_stop(message: Message):
     """Handler for mycroft.stop, i.e. button press."""
     loop.force_unmute()
 
@@ -182,7 +182,7 @@ def main():
     global service
     reset_sigint_handler()
     bus = get_mycroft_bus()  # Mycroft messagebus, see mycroft.messagebus
-    config = get_config()
+    config = Configuration.get()
 
     # Register handlers on internal RecognizerLoop emitter
     loop = RecognizerLoop(config)

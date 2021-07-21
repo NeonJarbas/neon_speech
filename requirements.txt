@@ -4,3 +4,6 @@ mycroft-messagebus-client>=0.8.4
 SpeechRecognition==3.8.1
 ovos_utils
 pydub
+jarbas-stt-plugin-chromium
+ovos-wake-word-plugin-pocketsphinx
+git+https://github.com/OpenVoiceOS/ovos-wake-word-plugin-precise

@@ -1,8 +1,10 @@
+import time
+from os.path import join, isdir
+from os import makedirs
+
+from mycroft.util import get_temp_path
 from neon_speech.plugins import AudioParser
 from pydub import AudioSegment
-import tempfile
-from os.path import join
-import time
 from speech_recognition import AudioData
 
 
@@ -13,6 +15,9 @@ class AudioNormalizer(AudioParser):
         self.thresh = self.config.get("threshold", 10)
         # final volume  in dB
         self.final_db = self.config.get("final_volume", -18.0)
+        self.cache_path = get_temp_path("mic_input")
+        if not isdir(self.cache_path):
+            makedirs(self.cache_path)
 
     def trim_silence(self, audio_data):
         if isinstance(audio_data, AudioData):
@@ -31,12 +36,13 @@ class AudioNormalizer(AudioParser):
                                                // 3)
         trimmed = audio_data[start_trim:-end_trim]
         if len(trimmed) >= 0.15 * len(audio_data):
-            audio_data = trimmed
+            audio_data = trimmed  # this is to ensure we dont accidentally
+            # delete too much audio if the threshold is too low
         if audio_data.dBFS != self.final_db:
             change_needed = self.final_db - audio_data.dBFS
             audio_data = audio_data.apply_gain(change_needed)
 
-        filename = join(tempfile.gettempdir(), str(time.time()) + ".wav")
+        filename = join(self.cache_path, str(time.time()) + ".wav")
         audio_data.export(filename, format="wav")
         with open(filename, "rb") as byte_data:
             return AudioData(byte_data.read(),

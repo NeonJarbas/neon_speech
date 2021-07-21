@@ -12,103 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-from time import sleep
-from threading import Event, Thread
-
-from neon_speech.plugins import load_plugin
-from ovos_utils.log import LOG
-
-INIT_TIMEOUT = 120  # In seconds
+import neon_speech
+from mycroft.client.speech.hotword_factory import HotWordEngine, \
+    HotWordFactory as MycroftHotWordFactory
+from mycroft.configuration import Configuration
 
 
-class TriggerReload(Exception):
-    pass
-
-
-class NoModelAvailable(Exception):
-    pass
-
-
-class HotWordEngine:
-    def __init__(self, key_phrase="hey mycroft", config=None, lang="en-us"):
-        self.key_phrase = str(key_phrase).lower()
-        # rough estimate 1 phoneme per 2 chars
-        self.num_phonemes = len(key_phrase) / 2 + 1
-        self.config = config or {}
-        self.module = self.config.get("module")
-        self.lang = str(self.config.get("lang", lang)).lower()
-
-    def found_wake_word(self, frame_data):
-        return False
-
-    def update(self, chunk):
-        pass
-
-    def stop(self):
-        """ Perform any actions needed to shut down the hot word engine.
-
-            This may include things such as unload loaded data or shutdown
-            external processess.
-        """
-        pass
-
-
-def load_wake_word_plugin(module_name):
-    """Wrapper function for loading wake word plugin.
-
-    Arguments:
-        (str) Mycroft wake word module name from config
-    """
-    return load_plugin('mycroft.plugin.wake_word', module_name)
-
-
-class HotWordFactory:
-    CLASSES = {
-        # engines without plugins can be added here
+class HotWordFactory(MycroftHotWordFactory):
+    MODULE_MAPPINGS = {
+        "pocketsphinx": "ovos_ww_pocketsphinx",
+        "precise": "ovos_ww_precise"
     }
-
-    @staticmethod
-    def load_module(module, hotword, config, lang, loop):
-        LOG.info('Loading "{}" wake word via {}'.format(hotword, module))
-        instance = None
-        complete = Event()
-
-        def initialize():
-            nonlocal instance, complete
-            try:
-                if module in HotWordFactory.CLASSES:
-                    clazz = HotWordFactory.CLASSES[module]
-                else:
-                    clazz = load_wake_word_plugin(module)
-                    LOG.info('Loaded the Wake Word plugin {}'.format(module))
-
-                instance = clazz(hotword, config, lang=lang)
-            except TriggerReload:
-                complete.set()
-                sleep(0.5)
-                loop.reload()
-            except NoModelAvailable:
-                LOG.warning('Could not found find model for {} on {}.'.format(
-                    hotword, module
-                ))
-                instance = None
-            except Exception:
-                LOG.exception(
-                    'Could not create hotword. Falling back to default.')
-                instance = None
-            complete.set()
-
-        Thread(target=initialize, daemon=True).start()
-        if not complete.wait(INIT_TIMEOUT):
-            LOG.info('{} is taking too long to load'.format(module))
-            complete.set()
-        return instance
 
     @classmethod
     def create_hotword(cls, hotword="dummy", config=None,
                        lang="en-us", loop=None):
-        ww_config_core = config or {}
+        ww_config_core = config or Configuration.get().get("hotwords", {})
         config = ww_config_core.get(hotword) or {}
         module = config.get("module", "dummy_ww_plug")
+        if module in HotWordFactory.MODULE_MAPPINGS:
+            module = HotWordFactory.MODULE_MAPPINGS[module]
         return cls.load_module(module, hotword, config, lang, loop) or \
-            HotWordEngine("dummy")
+               HotWordEngine("dummy")
